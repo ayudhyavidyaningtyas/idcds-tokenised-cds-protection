@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IDCDS — Indonesia CDS Protection Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #0a0e17;
+            color: #e0e6ed;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0f1923 0%, #1a1f35 100%);
+            border-bottom: 1px solid #1e2a3a;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .header h1 span { color: #4fc3f7; }
+
+        .header .subtitle {
+            font-size: 0.8rem;
+            color: #7a8a9e;
+            margin-top: 2px;
+        }
+
+        .connect-btn {
+            background: #4fc3f7;
+            color: #0a0e17;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .connect-btn:hover { background: #81d4fa; }
+        .connect-btn.connected { background: #2e7d32; color: white; }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 30px 40px; }
+
+        /* --- Top metrics bar --- */
+        .metrics-bar {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+
+        .metric-card {
+            background: #111827;
+            border: 1px solid #1e2a3a;
+            border-radius: 12px;
+            padding: 18px;
+        }
+
+        .metric-card .label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #7a8a9e;
+            margin-bottom: 6px;
+        }
+
+        .metric-card .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .metric-card .value.price { color: #4fc3f7; }
+        .metric-card .value.premium { color: #ffa726; }
+        .metric-card .value.phase { color: #66bb6a; }
+        .metric-card .value.phase.credit-event { color: #ef5350; }
+
+        /* --- Main grid --- */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        .panel {
+            background: #111827;
+            border: 1px solid #1e2a3a;
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .panel h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #1e2a3a;
+        }
+
+        .panel h2 .icon { margin-right: 8px; }
+
+        /* --- Form elements --- */
+        .input-group {
+            margin-bottom: 14px;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 0.75rem;
+            color: #7a8a9e;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .input-group input {
+            width: 100%;
+            background: #0a0e17;
+            border: 1px solid #1e2a3a;
+            color: #e0e6ed;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .input-group input:focus { border-color: #4fc3f7; }
+
+        .action-btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 8px;
+        }
+
+        .action-btn.primary { background: #4fc3f7; color: #0a0e17; }
+        .action-btn.primary:hover { background: #81d4fa; }
+        .action-btn.danger { background: #ef5350; color: white; }
+        .action-btn.danger:hover { background: #f44336; }
+        .action-btn.warning { background: #ffa726; color: #0a0e17; }
+        .action-btn.warning:hover { background: #ffb74d; }
+        .action-btn.success { background: #66bb6a; color: #0a0e17; }
+        .action-btn.success:hover { background: #81c784; }
+        .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* --- Event log --- */
+        .event-log {
+            grid-column: 1 / -1;
+        }
+
+        .log-entries {
+            max-height: 250px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+        }
+
+        .log-entry {
+            padding: 8px 12px;
+            border-bottom: 1px solid #1a1f2e;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .log-entry:nth-child(even) { background: #0d1220; }
+        .log-entry .time { color: #7a8a9e; min-width: 80px; }
+        .log-entry .msg { color: #e0e6ed; }
+        .log-entry .tx { color: #4fc3f7; font-size: 0.7rem; }
+
+        .log-entry.success .msg { color: #66bb6a; }
+        .log-entry.error .msg { color: #ef5350; }
+
+        /* --- Premium indicator bar --- */
+        .premium-bar {
+            margin: 12px 0;
+            background: #0a0e17;
+            border-radius: 6px;
+            height: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .premium-bar .fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.5s ease;
+        }
+
+        .premium-bar .fill.low { background: #66bb6a; }
+        .premium-bar .fill.medium { background: #ffa726; }
+        .premium-bar .fill.high { background: #ef5350; }
+
+        .premium-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            color: #7a8a9e;
+            margin-top: 4px;
+        }
+
+        /* --- Position summary --- */
+        .position-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #1a1f2e;
+            font-size: 0.85rem;
+        }
+
+        .position-row .label { color: #7a8a9e; }
+        .position-row .val { color: #fff; font-weight: 600; }
+
+        /* --- Status badge --- */
+        .status-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .status-badge.issuance { background: #1a237e; color: #7986cb; }
+        .status-badge.active { background: #1b5e20; color: #81c784; }
+        .status-badge.credit-event { background: #b71c1c; color: #ef9a9a; }
+        .status-badge.expired { background: #4a4a4a; color: #bbb; }
+
+        .info-text {
+            font-size: 0.8rem;
+            color: #7a8a9e;
+            line-height: 1.5;
+            margin-bottom: 14px;
+        }
+
+        @media (max-width: 768px) {
+            .metrics-bar { grid-template-columns: repeat(2, 1fr); }
+            .main-grid { grid-template-columns: 1fr; }
+            .container { padding: 16px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div>
+        <h1><span>IDCDS</span> — Indonesia CDS Protection</h1>
+        <div class="subtitle">Tokenised Credit Default Swap on Indonesian Sovereign Debt · Sepolia Testnet</div>
+    </div>
+    <button class="connect-btn" id="connectBtn" onclick="connectWallet()">Connect MetaMask</button>
+</div>
+
+<div class="container">
+    <!-- Metrics Bar -->
+    <div class="metrics-bar">
+        <div class="metric-card">
+            <div class="label">Oracle Price (ETH/USD)</div>
+            <div class="value price" id="oraclePrice">—</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Dynamic Premium</div>
+            <div class="value premium" id="premiumBps">—</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Contract Phase</div>
+            <div class="value phase" id="currentPhase">—</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Total Collateral</div>
+            <div class="value" id="totalCollateral">—</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Tokens Sold</div>
+            <div class="value" id="tokensSold">—</div>
+        </div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="main-grid">
+
+        <!-- Protection Seller Panel -->
+        <div class="panel">
+            <h2><span class="icon">🛡️</span>Sell Protection</h2>
+            <p class="info-text">
+                Deposit USDC collateral to back CDS protection tokens. 
+                Each $100 deposited backs 1 IDCDS token. You earn premiums from buyers.
+            </p>
+            <div class="input-group">
+                <label>Collateral Amount (USDC)</label>
+                <input type="number" id="depositAmount" placeholder="e.g. 1000 (in USDC units)" step="100" min="100">
+            </div>
+            <button class="action-btn primary" onclick="depositCollateral()">Deposit Collateral</button>
+            <button class="action-btn success" onclick="reclaimCollateral()">Reclaim Collateral (Post-Expiry)</button>
+        </div>
+
+        <!-- Protection Buyer Panel -->
+        <div class="panel">
+            <h2><span class="icon">📋</span>Buy Protection</h2>
+            <p class="info-text">
+                Pay a dynamic premium (adjusted by oracle) to receive IDCDS tokens.
+                Each token = $100 notional of sovereign credit protection.
+            </p>
+            <div class="input-group">
+                <label>Number of Tokens</label>
+                <input type="number" id="buyTokens" placeholder="e.g. 5" step="1" min="1">
+            </div>
+            <div id="premiumPreview" style="font-size:0.8rem; color:#ffa726; margin-bottom:12px;"></div>
+            <button class="action-btn primary" onclick="buyProtection()">Buy Protection</button>
+            <button class="action-btn warning" onclick="redeemTokens()">Redeem (Post-Credit Event)</button>
+        </div>
+
+        <!-- Oracle & Premium Panel -->
+        <div class="panel">
+            <h2><span class="icon">🔮</span>Oracle & Dynamic Premium</h2>
+            <p class="info-text">
+                Premium adjusts based on Chainlink ETH/USD (proxy for sovereign credit stress).
+                Lower ETH price → higher market stress → wider CDS spread.
+            </p>
+            <div class="premium-bar">
+                <div class="fill low" id="premiumFill" style="width: 30%;"></div>
+            </div>
+            <div class="premium-labels">
+                <span>3% (Calm)</span>
+                <span>5.5% (Neutral)</span>
+                <span>8% (Stressed)</span>
+            </div>
+            <div style="margin-top:16px;">
+                <div class="position-row">
+                    <span class="label">Oracle Price</span>
+                    <span class="val" id="oraclePrice2">—</span>
+                </div>
+                <div class="position-row">
+                    <span class="label">Current Premium</span>
+                    <span class="val" id="premiumRate">—</span>
+                </div>
+                <div class="position-row">
+                    <span class="label">Payout per Token</span>
+                    <span class="val" id="payoutPerToken">—</span>
+                </div>
+                <div class="position-row">
+                    <span class="label">Time to Maturity</span>
+                    <span class="val" id="timeToMaturity">—</span>
+                </div>
+            </div>
+            <button class="action-btn primary" onclick="refreshData()" style="margin-top:14px;">Refresh Oracle Data</button>
+        </div>
+
+        <!-- Admin / Lifecycle Panel -->
+        <div class="panel">
+            <h2><span class="icon">⚙️</span>Contract Lifecycle</h2>
+            <p class="info-text">
+                Owner controls phase transitions. Parametric trigger is permissionless 
+                (anyone can call if oracle condition is met).
+            </p>
+            <button class="action-btn success" onclick="approveUSDC()">1. Approve USDC Spending</button>
+            <button class="action-btn primary" onclick="activate()">2. Activate Contract</button>
+            <button class="action-btn danger" onclick="triggerCreditEvent()">3. Trigger Credit Event (Manual)</button>
+            <button class="action-btn danger" onclick="triggerParametric()">3b. Trigger Credit Event (Parametric)</button>
+            <button class="action-btn warning" onclick="expireContract()">3c. Expire Contract</button>
+
+            <div style="margin-top:16px;">
+                <div class="position-row">
+                    <span class="label">Your IDCDS Balance</span>
+                    <span class="val" id="tokenBalance">—</span>
+                </div>
+                <div class="position-row">
+                    <span class="label">Your USDC Balance</span>
+                    <span class="val" id="usdcBalance">—</span>
+                </div>
+                <div class="position-row">
+                    <span class="label">Your Collateral Deposited</span>
+                    <span class="val" id="yourCollateral">—</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Event Log -->
+        <div class="panel event-log">
+            <h2><span class="icon">📜</span>Transaction Log</h2>
+            <div class="log-entries" id="logEntries">
+                <div class="log-entry">
+                    <span class="time">—</span>
+                    <span class="msg">Connect MetaMask to begin</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ====================================================================
+    // CONTRACT ADDRESSES — UPDATE THESE AFTER DEPLOYING V3
+    // ====================================================================
+    const IDCDS_ADDRESS = "0xB25794122E3b3e5df3C5C5aeC3f895CeaC4d0E41";
+    const MUSDC_ADDRESS = "0x5f4f6CeB1AfCc4a93102ce3e9124fcAFC7f98d38";
+
+    // ====================================================================
+    // ABIs (minimal — only the functions we call)
+    // ====================================================================
+    const IDCDS_ABI = [
+        "function getLatestPrice() view returns (int256 price, uint256 timestamp, uint80 roundId)",
+        "function getCurrentPremiumBps() view returns (uint256 premiumBps, uint256 currentPrice)",
+        "function currentPhase() view returns (uint8)",
+        "function totalCollateral() view returns (uint256)",
+        "function totalTokensSold() view returns (uint256)",
+        "function totalPremiumsCollected() view returns (uint256)",
+        "function balanceOf(address) view returns (uint256)",
+        "function sellerCollateral(address) view returns (uint256)",
+        "function payoutPerToken() view returns (uint256)",
+        "function timeToMaturity() view returns (uint256)",
+        "function availableProtection() view returns (uint256)",
+        "function premiumFor(uint256) view returns (uint256, uint256, uint256)",
+        "function depositCollateral(uint256)",
+        "function buyProtection(uint256)",
+        "function activate()",
+        "function triggerCreditEvent()",
+        "function triggerCreditEventParametric()",
+        "function expire()",
+        "function redeem(uint256)",
+        "function reclaimCollateral()"
+    ];
+
+    const ERC20_ABI = [
+        "function approve(address, uint256) returns (bool)",
+        "function balanceOf(address) view returns (uint256)",
+        "function allowance(address, address) view returns (uint256)"
+    ];
+
+    // ====================================================================
+    // STATE
+    // ====================================================================
+    let provider, signer, userAddress;
+    let idcdsContract, musdcContract;
+    const PHASES = ["Issuance", "Active", "Credit Event", "Expired"];
+
+    // ====================================================================
+    // CONNECT
+    // ====================================================================
+    async function connectWallet() {
+        try {
+            if (!window.ethereum) {
+                addLog("MetaMask not detected. Please install it.", "error");
+                return;
+            }
+            provider = new ethers.BrowserProvider(window.ethereum);
+            await provider.send("eth_requestAccounts", []);
+            signer = await provider.getSigner();
+            userAddress = await signer.getAddress();
+
+            idcdsContract = new ethers.Contract(IDCDS_ADDRESS, IDCDS_ABI, signer);
+            musdcContract = new ethers.Contract(MUSDC_ADDRESS, ERC20_ABI, signer);
+
+            const btn = document.getElementById("connectBtn");
+            btn.textContent = userAddress.slice(0, 6) + "..." + userAddress.slice(-4);
+            btn.classList.add("connected");
+
+            addLog("Wallet connected: " + userAddress.slice(0, 10) + "...", "success");
+            await refreshData();
+        } catch (err) {
+            addLog("Connection failed: " + err.message, "error");
+        }
+    }
+
+    // ====================================================================
+    // REFRESH DATA
+    // ====================================================================
+    async function refreshData() {
+        if (!idcdsContract) return;
+        try {
+            // Oracle price
+            const [price, , ] = await idcdsContract.getLatestPrice();
+            const ethPrice = Number(price) / 1e8;
+            document.getElementById("oraclePrice").textContent = "$" + ethPrice.toFixed(2);
+            document.getElementById("oraclePrice2").textContent = "$" + ethPrice.toFixed(2);
+
+            // Dynamic premium
+            const [premBps, ] = await idcdsContract.getCurrentPremiumBps();
+            const premPercent = Number(premBps) / 100;
+            document.getElementById("premiumBps").textContent = premPercent.toFixed(1) + "%";
+            document.getElementById("premiumRate").textContent = premPercent.toFixed(1) + "% (" + Number(premBps) + " bps)";
+
+            // Premium bar visual
+            const fillPct = ((Number(premBps) - 300) / 500) * 100;
+            const fillEl = document.getElementById("premiumFill");
+            fillEl.style.width = Math.max(5, Math.min(100, fillPct)) + "%";
+            fillEl.className = "fill " + (fillPct < 33 ? "low" : fillPct < 66 ? "medium" : "high");
+
+            // Phase
+            const phase = Number(await idcdsContract.currentPhase());
+            const phaseEl = document.getElementById("currentPhase");
+            phaseEl.textContent = PHASES[phase];
+            phaseEl.className = "value phase" + (phase === 2 ? " credit-event" : "");
+
+            // Collateral & tokens
+            const collateral = Number(await idcdsContract.totalCollateral()) / 1e6;
+            document.getElementById("totalCollateral").textContent = "$" + collateral.toLocaleString();
+
+            const sold = Number(await idcdsContract.totalTokensSold());
+            document.getElementById("tokensSold").textContent = sold.toString();
+
+            // Payout
+            const payout = Number(await idcdsContract.payoutPerToken()) / 1e6;
+            document.getElementById("payoutPerToken").textContent = "$" + payout.toFixed(0);
+
+            // Maturity
+            const ttm = Number(await idcdsContract.timeToMaturity());
+            const days = Math.floor(ttm / 86400);
+            document.getElementById("timeToMaturity").textContent = days + " days";
+
+            // User balances
+            const idcdsBalance = Number(await idcdsContract.balanceOf(userAddress)) / 1e18;
+            document.getElementById("tokenBalance").textContent = idcdsBalance.toFixed(0) + " IDCDS";
+
+            const usdcBal = Number(await musdcContract.balanceOf(userAddress)) / 1e6;
+            document.getElementById("usdcBalance").textContent = "$" + usdcBal.toLocaleString();
+
+            const myCollateral = Number(await idcdsContract.sellerCollateral(userAddress)) / 1e6;
+            document.getElementById("yourCollateral").textContent = "$" + myCollateral.toLocaleString();
+
+        } catch (err) {
+            addLog("Refresh error: " + err.message, "error");
+        }
+    }
+
+    // ====================================================================
+    // ACTIONS
+    // ====================================================================
+    async function approveUSDC() {
+        try {
+            addLog("Approving USDC spending...");
+            const tx = await musdcContract.approve(IDCDS_ADDRESS, ethers.parseUnits("100000", 6));
+            await tx.wait();
+            addLog("USDC approved!", "success");
+            await refreshData();
+        } catch (err) { addLog("Approve failed: " + err.reason || err.message, "error"); }
+    }
+
+    async function depositCollateral() {
+        try {
+            const amount = document.getElementById("depositAmount").value;
+            if (!amount) return addLog("Enter deposit amount", "error");
+            const usdcAmount = ethers.parseUnits(amount, 6);
+            addLog("Depositing $" + amount + " collateral...");
+            const tx = await idcdsContract.depositCollateral(usdcAmount);
+            await tx.wait();
+            addLog("Deposited $" + amount + " collateral!", "success");
+            await refreshData();
+        } catch (err) { addLog("Deposit failed: " + (err.reason || err.message), "error"); }
+    }
+
+    async function buyProtection() {
+        try {
+            const tokens = document.getElementById("buyTokens").value;
+            if (!tokens) return addLog("Enter number of tokens", "error");
+            addLog("Buying " + tokens + " protection tokens...");
+            const tx = await idcdsContract.buyProtection(tokens);
+            await tx.wait();
+            addLog("Bought " + tokens + " IDCDS tokens!", "success");
+            await refreshData();
+        } catch (err) { addLog("Buy failed: " + (err.reason || err.message), "error"); }
+    }
+
+    async function activate() {
+        try {
+            addLog("Activating contract...");
+            const tx = await idcdsContract.activate();
+            await tx.wait();
+            addLog("Contract activated!", "success");
+            await refreshData();
+        } catch (err) { addLog("Activate failed: " + (err.reason || err.message), "error"); }
+    }
+
+    async function triggerCreditEvent() {
+        try {
+            addLog("Triggering credit event (manual)...");
+            const tx = await idcdsContract.triggerCreditEvent();
+            await tx.wait();
+            addLog("CREDIT EVENT TRIGGERED!", "success");
+            await refreshData();
+        } catch (err) { addLog("Trigger failed: " + (err.reason || err.message), "error"); }
+    }
+
+    async function triggerParametric() {
+        try {
+            addLog("Checking parametric trigger condition...");
+            const tx = await idcdsContract.triggerCreditEventParametric();
+            await tx.wait();
+            addLog("PARAMETRIC CREDIT EVENT TRIGGERED!", "success");
+            await refreshData();
+        } catch (err) { addLog("Parametric trigger: condition not met or " + (err.reason || err.message), "error"); }
+    }
+
+    async function expireContract() {
+        try {
+            addLog("Expiring contract...");
+            const tx = await idcdsContract.expire();
+            await tx.wait();
+            addLog("Contract expired!", "success");
+            await refreshData();
+        } catch (err) { addLog("Expire failed: " + (err.reason || err.message), "error"); }
+    }
+
+    async function redeemTokens() {
+        try {
+            const bal = Number(await idcdsContract.balanceOf(userAddress)) / 1e18;
+            if (bal === 0) return addLog("No tokens to redeem", "error");
+            addLog("Redeeming " + bal + " tokens...");
+            const tx = await idcdsContract.redeem(bal);
+            await tx.wait();
+            addLog("Redeemed " + bal + " tokens for payout!", "success");
+            await refreshData();
+        } catch (err) { addLog("Redeem failed: " + (err.reason || err.message), "error"); }
+    }
+
+    async function reclaimCollateral() {
+        try {
+            addLog("Reclaiming collateral...");
+            const tx = await idcdsContract.reclaimCollateral();
+            await tx.wait();
+            addLog("Collateral reclaimed!", "success");
+            await refreshData();
+        } catch (err) { addLog("Reclaim failed: " + (err.reason || err.message), "error"); }
+    }
+
+    // Preview premium when user types
+    document.addEventListener("DOMContentLoaded", () => {
+        const input = document.getElementById("buyTokens");
+        input.addEventListener("input", async () => {
+            if (!idcdsContract || !input.value) {
+                document.getElementById("premiumPreview").textContent = "";
+                return;
+            }
+            try {
+                const [total, bps, price] = await idcdsContract.premiumFor(input.value);
+                const usd = Number(total) / 1e6;
+                document.getElementById("premiumPreview").textContent =
+                    "Premium: $" + usd.toFixed(2) + " (" + Number(bps) + " bps at $" + (Number(price)/1e8).toFixed(0) + " ETH)";
+            } catch {}
+        });
+    });
+
+    // ====================================================================
+    // LOGGING
+    // ====================================================================
+    function addLog(msg, type = "") {
+        const container = document.getElementById("logEntries");
+        const entry = document.createElement("div");
+        entry.className = "log-entry " + type;
+        const now = new Date().toLocaleTimeString();
+        entry.innerHTML = `<span class="time">${now}</span><span class="msg">${msg}</span>`;
+        container.prepend(entry);
+    }
+
+    // Auto-refresh every 30s
+    setInterval(() => { if (idcdsContract) refreshData(); }, 30000);
+</script>
+
+</body>
+</html>
