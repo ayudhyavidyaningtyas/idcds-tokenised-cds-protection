@@ -6,16 +6,19 @@ IDCDS is an ERC-20 token representing credit default swap (CDS) protection on In
 
 Developed for **IFTE0007 Decentralised Finance and Blockchain** at **UCL Institute of Finance and Technology** (2025–26).
 
+**Live Dashboard:** [ayudhyavidyaningtyas.github.io/idcds-tokenised-cds-protection](https://ayudhyavidyaningtyas.github.io/idcds-tokenised-cds-protection/)
+
 ## Features
 
-- **Dynamic premium pricing** — Adjusts in real-time based on Chainlink oracle data (3% in calm markets to 8% in stressed markets, linearly interpolated)
-- **Dual trigger mechanism** — Manual trigger (simulating ISDA Determinations Committee) + parametric trigger (permissionless, oracle-driven)
+- **Dynamic premium pricing** — Adjusts in real-time based on Chainlink oracle data (3% calm to 8% stressed, linearly interpolated)
+- **Dual trigger mechanism** — Manual trigger (ISDA DC proxy) + parametric trigger (permissionless, oracle-driven)
 - **Full lifecycle management** — Issuance → Active → Credit Event/Expiry → Settlement
 - **Post-default seller settlement** — Sellers recover residual collateral and premiums after credit event
-- **Chainlink oracle integration** — Reads live ETH/USD on Sepolia with staleness and validity checks
-- **SafeERC20** — Robust token transfer handling
-- **Exact-balance redemption** — Supports fractional token redemption (no dust)
+- **Chainlink oracle integration** — Live ETH/USD on Sepolia with staleness and validity checks
+- **SafeERC20** — Robust token transfer handling via OpenZeppelin
+- **Exact-balance redemption** — Supports fractional token redemption with no dust
 - **Frozen economic terms** — Trigger price and parameters locked at activation
+- **Analytics dashboard** — Real Indonesia 5Y CDS spreads (LSEG) vs. on-chain premium model (CoinGecko), visualising oracle mismatch
 
 ## How It Works
 
@@ -45,14 +48,32 @@ ETH  = $2,250  →  5.5% premium (interpolated)
 ETH <= $1,500  →  8.0% premium (stressed markets)
 ```
 
-This mirrors real CDS markets where spreads widen during periods of market stress. At the time of testnet deployment, ETH/USD was ~$2,041, producing a dynamic premium of **6.19%** (619 bps).
+At testnet deployment (30 March 2026), ETH/USD was ~$2,041, producing a dynamic premium of **6.19%** (619 bps).
+
+## Deployment (Sepolia Testnet)
+
+| Contract | Address |
+|----------|---------|
+| MockUSDC | [`0x5f4f6CeB1AfCc4a93102ce3e9124fcAFC7f98d38`](https://sepolia.etherscan.io/address/0x5f4f6CeB1AfCc4a93102ce3e9124fcAFC7f98d38) |
+| IDCDS v4 | [`0xB25794122E3b3e5df3C5C5aeC3f895CeaC4d0E41`](https://sepolia.etherscan.io/address/0xB25794122E3b3e5df3C5C5aeC3f895CeaC4d0E41) |
+
+## Demonstrated Lifecycle
+
+| Step | Method | Description |
+|------|--------|-------------|
+| 1 | `depositCollateral` | $1,000 USDC deposited (backs 10 tokens) |
+| 2 | `buyProtection` | 5 tokens purchased at 619 bps dynamic premium |
+| 3 | `activate` | Contract terms locked, active phase begins |
+| 4 | `triggerCreditEvent` | Manual trigger (simulating ISDA DC decision) |
+| 5 | `redeemAll` | 5 tokens burned, $300 USDC payout (5 × $60) |
+| 6 | `settlePostDefault` | Seller recovers residual collateral + premiums |
 
 ## Smart Contract Architecture
 
 ```
-MockUSDC.sol    — Test stablecoin (6 decimals, public mint)
-IDCDS.sol       — Main protection token with oracle integration
-dashboard.html  — Frontend dApp for contract interaction
+MockUSDC.sol  — Test stablecoin (6 decimals, public mint)
+IDCDS.sol     — Main protection token with oracle integration
+index.html    — Frontend dApp with analytics dashboard
 ```
 
 ### Key Functions
@@ -66,52 +87,33 @@ dashboard.html  — Frontend dApp for contract interaction
 | `triggerCreditEventParametric()` | Anyone | Auto-trigger if oracle threshold breached |
 | `expire()` | Anyone | Expire contract at maturity |
 | `redeemAll()` | Token holder | Burn all tokens, receive payout |
-| `redeem()` | Token holder | Burn exact token amount (supports fractional) |
 | `reclaimCollateral()` | Seller | Reclaim collateral + premiums after expiry |
 | `settlePostDefault()` | Seller | Recover residual collateral + premiums after credit event |
 | `getLatestPrice()` | Anyone | Read live Chainlink oracle price (with staleness check) |
 | `getCurrentPremiumBps()` | Anyone | Get current dynamic premium rate |
 
-### Lifecycle Phases
-
-```
-Issuance → Active → Credit Event → Redeem → Seller Settlement
-                  → Expiry → Seller Reclaim
-```
-
-## Deployment (Sepolia Testnet)
-
-| Contract | Address |
-|----------|---------|
-| MockUSDC | `0x5f4f6CeB1AfCc4a93102ce3e9124fcAFC7f98d38` |
-| IDCDS v4 | `0xB25794122E3b3e5df3C5C5aeC3f895CeaC4d0E41` |
-
-Verified on [Etherscan (Sepolia)](https://sepolia.etherscan.io/address/0xB25794122E3b3e5df3C5C5aeC3f895CeaC4d0E41).
-
-## Demonstrated Lifecycle
-
-The full lifecycle was executed on Sepolia testnet:
-
-| Step | Transaction | Description |
-|------|------------|-------------|
-| 1 | Deposit Collateral | $1,000 USDC deposited (backs 10 tokens) |
-| 2 | Buy Protection | 5 tokens purchased at 619 bps dynamic premium |
-| 3 | Activate | Contract terms locked, active phase begins |
-| 4 | Trigger Credit Event | Manual trigger (simulating ISDA DC decision) |
-| 5 | Redeem All | 5 tokens burned, $300 USDC payout (5 × $60) |
-| 6 | Settle Post Default | Seller recovers residual $200 + $15.48 premium |
-
 ## Frontend Dashboard
 
-Open `dashboard.html` in any browser with MetaMask installed. Features:
+The live dashboard provides:
 
-- Real-time oracle price and dynamic premium display
-- Premium stress indicator bar
-- One-click contract interaction (deposit, buy, activate, trigger, redeem)
-- Live balance tracking (IDCDS tokens, USDC, collateral)
-- Transaction log
+- **Analytics chart** — Real Indonesia 5Y CDS spreads (LSEG Workspace, IDGV5YUSAC=R) plotted against the on-chain dynamic premium model (CoinGecko ETH/USD API). The gap between the lines visualises the oracle mismatch.
+- **Real-time oracle data** — Live Chainlink ETH/USD price and computed premium
+- **Premium stress indicator** — Gradient bar showing current market regime
+- **Contract interaction** — Deposit, buy, activate, trigger, redeem, settle
+- **Balance tracking** — IDCDS tokens, USDC, collateral positions
+- **Activity log** — Transaction history with status
 
-To use: update the `IDCDS_ADDRESS` constant in the HTML file with the deployed contract address.
+## Security Features (v4)
+
+| Feature | Implementation |
+|---------|---------------|
+| SafeERC20 | All transfers use OpenZeppelin `safeTransferFrom` / `safeTransfer` |
+| Oracle staleness | `getLatestPrice()` rejects data older than 1 hour |
+| Term immutability | Parameters locked after `activate()` |
+| Input validation | Constructor rejects zero addresses, zero maturity, zero trigger |
+| Activation guards | Requires at least one seller and one buyer |
+| Reentrancy protection | All state-changing functions use `ReentrancyGuard` |
+| Post-default settlement | Prevents permanent fund entrapment after credit events |
 
 ## Design Simplifications
 
@@ -124,22 +126,15 @@ To use: update the `IDCDS_ADDRESS` constant in the HTML file with the deployed c
 | Recovery rate | Hardcoded 40% | Post-event auction (ISDA protocol) |
 | Secondary market | Not implemented | Uniswap v3 IDCDS/USDC pool |
 
-## Security Considerations (v4)
-
-- **SafeERC20**: All token transfers use OpenZeppelin SafeERC20 to handle non-standard ERC-20 behaviour
-- **Oracle staleness**: `getLatestPrice()` rejects data older than 1 hour and validates round completeness
-- **Term immutability**: Economic parameters (trigger price, oracle source) locked after `activate()`
-- **Input validation**: Constructor rejects zero addresses, zero maturity, and zero trigger price
-- **Activation guards**: `activate()` requires at least one seller and one buyer
-- **Reentrancy protection**: All state-changing functions use OpenZeppelin ReentrancyGuard
-- **Post-default settlement**: Sellers can recover residual collateral after credit event, preventing fund entrapment
-
 ## Technology Stack
 
 - Solidity ^0.8.20
 - OpenZeppelin Contracts (ERC20, Ownable, ReentrancyGuard, SafeERC20)
 - Chainlink Price Feeds (AggregatorV3Interface)
-- ethers.js v6 (frontend)
+- Chart.js (analytics visualisation)
+- ethers.js v6 (frontend wallet integration)
+- CoinGecko API (live ETH/USD historical data)
+- LSEG Workspace (Indonesia 5Y CDS reference data)
 - Remix IDE / Sepolia Testnet / MetaMask
 
 ## License
