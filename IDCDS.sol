@@ -7,13 +7,13 @@ pragma solidity ^0.8.20;
 // Tokenised CDS protection on Indonesian sovereign USD-denominated bonds.
 //
 // v4 improvements over v3:
-//   - Post-credit-event seller settlement (residual collateral + premiums)
-//   - Exact-balance redemption (no dust from fractional tokens)
+//   - Post-credit-event seller settlement without buyer-redemption deadlock
+//   - Exact-balance redemption for economically meaningful fractional balances
 //   - Economic terms frozen at activation (trigger price immutable once live)
 //   - SafeERC20 for robust token transfers
-//   - Oracle staleness checks (updatedAt, answeredInRound)
+//   - Oracle round-validity + staleness checks
 //   - Constructor input validation (zero address, zero maturity guards)
-//   - Capital-efficient collateral (locked to max payout, not full notional)
+//   - Safer overcollateralised collateral model
 //
 // Deployed on Sepolia testnet for IFTE0007 coursework at UCL IFT.
 // ============================================================================
@@ -62,7 +62,6 @@ contract IDCDS is ERC20, Ownable, ReentrancyGuard {
     uint256 public totalCollateral;
     uint256 public totalPremiumsCollected;
     uint256 public totalTokensSold;
-    uint256 public totalTokensRedeemed;          // Track redemptions for seller settlement
     mapping(address => uint256) public sellerCollateral;
 
     // ========================================================================
@@ -124,12 +123,13 @@ contract IDCDS is ERC20, Ownable, ReentrancyGuard {
             int256 _price,
             ,
             uint256 _updatedAt,
-
+            uint80 _answeredInRound
         ) = priceFeed.latestRoundData();
 
         // Safety checks: price must be positive, data must be fresh
         require(_price > 0, "Oracle: invalid price");
         require(_updatedAt > 0, "Oracle: incomplete round");
+        require(_answeredInRound >= _roundId, "Oracle: stale round");
         require(block.timestamp - _updatedAt <= MAX_ORACLE_AGE, "Oracle: stale data");
 
         return (_price, _updatedAt, _roundId);
@@ -264,8 +264,9 @@ contract IDCDS is ERC20, Ownable, ReentrancyGuard {
     // SETTLEMENT — Supports both credit event and expiry paths
     // ========================================================================
 
-    /// @notice Redeem tokens after credit event. Works with exact token balance.
-    ///         Accepts actual token units (with 18 decimals) for dust-free redemption.
+    /// @notice Redeem tokens after credit event using exact 18-decimal token units.
+    ///         Very small balances that round to zero USDC remain valueless dust, but
+    ///         they no longer block seller settlement.
     /// @param tokenAmount Amount of IDCDS tokens to redeem (in 18-decimal units)
     function redeem(uint256 tokenAmount) external nonReentrant {
         require(currentPhase == Phase.CreditEvent, "No credit event triggered");
@@ -276,9 +277,6 @@ contract IDCDS is ERC20, Ownable, ReentrancyGuard {
         // payout = tokenAmount * PAYOUT_PER_TOKEN / 1e18
         uint256 payout = (tokenAmount * PAYOUT_PER_TOKEN) / 1e18;
         require(payout > 0, "Payout rounds to zero");
-
-        // Track whole tokens redeemed for seller settlement accounting
-        totalTokensRedeemed += tokenAmount / 1e18;
 
         _burn(msg.sender, tokenAmount);
         usdc.safeTransfer(msg.sender, payout);
@@ -295,8 +293,6 @@ contract IDCDS is ERC20, Ownable, ReentrancyGuard {
 
         uint256 payout = (bal * PAYOUT_PER_TOKEN) / 1e18;
         require(payout > 0, "Payout rounds to zero");
-        totalTokensRedeemed += bal / 1e18;
-
         _burn(msg.sender, bal);
         usdc.safeTransfer(msg.sender, payout);
 
@@ -317,32 +313,29 @@ contract IDCDS is ERC20, Ownable, ReentrancyGuard {
         emit CollateralReclaimed(msg.sender, deposit + premiumShare, block.timestamp);
     }
 
-    /// @notice POST-DEFAULT seller settlement: sellers claim residual collateral + premiums
-    ///         after credit event. The $40 per token not paid to protection buyers,
-    ///         plus collected premiums, are returned pro-rata to sellers.
+    /// @notice POST-DEFAULT seller settlement: sellers claim their share of the
+    ///         collateral and premiums not needed to honor buyer payouts.
+    ///         This amount is fixed at credit event and does not require all buyers
+    ///         to redeem first, avoiding a dust-induced settlement deadlock.
     function settlePostDefault() external nonReentrant {
         require(currentPhase == Phase.CreditEvent, "Not in credit event phase");
-        // Require all tokens to be redeemed (or supply is 0 = all burned)
-        require(totalSupply() == 0, "Buyers must redeem all tokens first");
 
         uint256 deposit = sellerCollateral[msg.sender];
         require(deposit > 0, "No collateral to settle");
 
-        // Total paid out to protection buyers
-        uint256 totalPayouts = totalTokensRedeemed * PAYOUT_PER_TOKEN;
+        // Seller pool = all collateral and premiums minus the maximum buyer payouts
+        // implied by the protection sold at activation.
+        uint256 buyerPayoutPool = totalTokensSold * PAYOUT_PER_TOKEN;
+        uint256 sellerPool = totalCollateral + totalPremiumsCollected - buyerPayoutPool;
 
-        // Residual collateral = total deposited - total paid out
-        uint256 residualPool = totalCollateral - totalPayouts;
-
-        // Seller's pro-rata share of residual + premiums
-        uint256 residualShare = (residualPool * deposit) / totalCollateral;
-        uint256 premiumShare = (totalPremiumsCollected * deposit) / totalCollateral;
+        uint256 sellerShare = (sellerPool * deposit) / totalCollateral;
 
         sellerCollateral[msg.sender] = 0;
 
-        uint256 totalReturn = residualShare + premiumShare;
-        usdc.safeTransfer(msg.sender, totalReturn);
+        usdc.safeTransfer(msg.sender, sellerShare);
 
+        uint256 premiumShare = (totalPremiumsCollected * deposit) / totalCollateral;
+        uint256 residualShare = sellerShare - premiumShare;
         emit SellerSettledPostDefault(msg.sender, residualShare, premiumShare, block.timestamp);
     }
 
